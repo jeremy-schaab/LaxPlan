@@ -12,10 +12,14 @@ import {
   Mail,
   Settings,
   ClipboardList,
+  Building2,
+  UserCog,
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Organizations", href: "/organizations", icon: Building2 },
+  { name: "Coaches", href: "/coaches", icon: UserCog },
   { name: "Teams", href: "/teams", icon: Users },
   { name: "Fields", href: "/fields", icon: MapPin },
   { name: "Dates & Times", href: "/dates", icon: Calendar },

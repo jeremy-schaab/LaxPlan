@@ -83,6 +83,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       expect(result).toEqual([]);
@@ -99,6 +100,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       expect(result).toEqual([]);
@@ -478,6 +480,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       // Second generation with first game as existing
@@ -485,6 +488,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       // If Team 1 was home in first game, Team 2 should be home in second
@@ -526,6 +530,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       // No new games should be generated since slot is taken
@@ -572,6 +577,7 @@ describe("Schedule Generator", () => {
         avoidBackToBack: true,
         balanceHomeAway: true,
         prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
       });
 
       // Team 2 should be home to balance (Team 1 has 2 home, Team 2 has 0)
@@ -780,6 +786,117 @@ describe("Schedule Generator", () => {
         teamsInSlot.add(game.homeTeamId);
         teamsInSlot.add(game.awayTeamId);
       });
+    });
+  });
+
+  describe("Organization Separation", () => {
+    // Helper to create team with organization
+    function createTeamWithOrg(
+      id: string,
+      name: string,
+      ageGroup: Team["ageGroup"],
+      organizationId?: string
+    ): Team {
+      return {
+        id,
+        name,
+        ageGroup,
+        coaches: [],
+        organizationId,
+      };
+    }
+
+    it("should separate same-org teams when option enabled", () => {
+      const teams = [
+        createTeamWithOrg("1", "Club A U10", "U10", "org1"),
+        createTeamWithOrg("2", "Club A U12", "U12", "org1"),
+        createTeamWithOrg("3", "Club B U10", "U10", "org2"),
+        createTeamWithOrg("4", "Club B U12", "U12", "org2"),
+      ];
+      const fields = [createField("f1", "Field 1"), createField("f2", "Field 2")];
+      const dates = [
+        createScheduleDate("d1", "2024-03-01", [
+          { id: "ts1", startTime: "09:00", endTime: "10:00" },
+          { id: "ts2", startTime: "10:00", endTime: "11:00" },
+        ]),
+      ];
+
+      const result = generateSchedule(teams, fields, dates, [], {
+        avoidBackToBack: false,
+        balanceHomeAway: true,
+        prioritizeAgeGroups: true,
+        separateSameOrgTeams: true,
+      });
+
+      // Check that teams from same org don't play at the same time
+      const slotsByOrg = new Map<string, Set<string>>();
+
+      result.forEach((game) => {
+        const slotKey = `${game.dateId}-${game.timeSlotId}`;
+        const homeTeam = teams.find((t) => t.id === game.homeTeamId);
+        const awayTeam = teams.find((t) => t.id === game.awayTeamId);
+
+        [homeTeam, awayTeam].forEach((team) => {
+          if (team?.organizationId) {
+            const orgSlots = slotsByOrg.get(team.organizationId) || new Set();
+            // This org should not already have a game in this slot
+            expect(orgSlots.has(slotKey)).toBe(false);
+            orgSlots.add(slotKey);
+            slotsByOrg.set(team.organizationId, orgSlots);
+          }
+        });
+      });
+    });
+
+    it("should allow same-org teams at same time when option disabled", () => {
+      const teams = [
+        createTeamWithOrg("1", "Club A U10", "U10", "org1"),
+        createTeamWithOrg("2", "Club A U12", "U12", "org1"),
+        createTeamWithOrg("3", "Club B U10", "U10", "org2"),
+        createTeamWithOrg("4", "Club B U12", "U12", "org2"),
+      ];
+      const fields = [createField("f1", "Field 1"), createField("f2", "Field 2")];
+      const dates = [
+        createScheduleDate("d1", "2024-03-01", [
+          { id: "ts1", startTime: "09:00", endTime: "10:00" },
+        ]),
+      ];
+
+      const result = generateSchedule(teams, fields, dates, [], {
+        avoidBackToBack: false,
+        balanceHomeAway: true,
+        prioritizeAgeGroups: true,
+        separateSameOrgTeams: false,
+      });
+
+      // With 2 matchups (U10 and U12) and 2 fields, both can happen simultaneously
+      expect(result.length).toBe(2);
+    });
+
+    it("should handle teams without organizations", () => {
+      const teams = [
+        createTeamWithOrg("1", "Indie Team 1", "U10"),
+        createTeamWithOrg("2", "Indie Team 2", "U10"),
+        createTeamWithOrg("3", "Club A U10", "U10", "org1"),
+        createTeamWithOrg("4", "Club A U10 B", "U10", "org1"),
+      ];
+      const fields = [createField("f1", "Field 1"), createField("f2", "Field 2")];
+      const dates = [
+        createScheduleDate("d1", "2024-03-01", [
+          { id: "ts1", startTime: "09:00", endTime: "10:00" },
+          { id: "ts2", startTime: "10:00", endTime: "11:00" },
+        ]),
+      ];
+
+      const result = generateSchedule(teams, fields, dates, [], {
+        avoidBackToBack: false,
+        balanceHomeAway: true,
+        prioritizeAgeGroups: true,
+        separateSameOrgTeams: true,
+      });
+
+      // Should generate games; indie teams have no org restrictions
+      expect(result.length).toBeGreaterThan(0);
     });
   });
 });

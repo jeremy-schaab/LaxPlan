@@ -2,18 +2,29 @@ export type AgeGroup = "U8" | "U10" | "U12" | "U14" | "HS" | "Adult";
 
 export type FieldType = "full" | "half" | "third";
 
+export interface Organization {
+  id: string;
+  name: string;
+  abbreviation?: string;
+  color?: string;
+  notes?: string;
+}
+
 export interface Coach {
   id: string;
   name: string;
   email: string;
   phone?: string;
+  organizationId?: string;
 }
 
 export interface Team {
   id: string;
   name: string;
   ageGroup: AgeGroup;
+  organizationId?: string;
   coaches: Coach[];
+  coachIds?: string[];
   color?: string;
   notes?: string;
 }

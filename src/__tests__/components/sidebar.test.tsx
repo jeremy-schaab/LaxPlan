@@ -23,6 +23,8 @@ describe("Sidebar Component", () => {
     render(<Sidebar />);
 
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Organizations")).toBeInTheDocument();
+    expect(screen.getByText("Coaches")).toBeInTheDocument();
     expect(screen.getByText("Teams")).toBeInTheDocument();
     expect(screen.getByText("Fields")).toBeInTheDocument();
     expect(screen.getByText("Dates & Times")).toBeInTheDocument();
@@ -36,6 +38,8 @@ describe("Sidebar Component", () => {
     render(<Sidebar />);
 
     expect(screen.getByText("Dashboard").closest("a")).toHaveAttribute("href", "/");
+    expect(screen.getByText("Organizations").closest("a")).toHaveAttribute("href", "/organizations");
+    expect(screen.getByText("Coaches").closest("a")).toHaveAttribute("href", "/coaches");
     expect(screen.getByText("Teams").closest("a")).toHaveAttribute("href", "/teams");
     expect(screen.getByText("Fields").closest("a")).toHaveAttribute("href", "/fields");
     expect(screen.getByText("Dates & Times").closest("a")).toHaveAttribute("href", "/dates");

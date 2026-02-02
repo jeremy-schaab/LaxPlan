@@ -5,6 +5,7 @@ interface GeneratorOptions {
   avoidBackToBack: boolean;
   balanceHomeAway: boolean;
   prioritizeAgeGroups: boolean;
+  separateSameOrgTeams: boolean;
 }
 
 interface FieldSlot {
@@ -73,7 +74,8 @@ export function generateSchedule(
       matchup,
       [...allGames, ...games],
       teamStats,
-      options
+      options,
+      teams
     );
 
     if (availableSlot) {
@@ -100,7 +102,8 @@ export function generateSchedule(
       matchup,
       [...allGames, ...games],
       teamStats,
-      options
+      options,
+      teams
     );
 
     if (availableSlot) {
@@ -261,8 +264,14 @@ function findAvailableSlot(
   matchup: Matchup,
   scheduledGames: Game[],
   teamStats: Map<string, TeamStats>,
-  options: GeneratorOptions
+  options: GeneratorOptions,
+  teams: Team[]
 ): FieldSlot | null {
+  // Get organization IDs for the teams in this matchup
+  const homeTeam = teams.find((t) => t.id === matchup.homeTeamId);
+  const awayTeam = teams.find((t) => t.id === matchup.awayTeamId);
+  const matchupOrgIds = [homeTeam?.organizationId, awayTeam?.organizationId].filter(Boolean);
+
   for (const slot of slots) {
     if (slot.isUsed) continue;
 
@@ -296,6 +305,25 @@ function findAvailableSlot(
           g.fieldSection === slot.fieldSection
       );
       if (fieldConflict) continue;
+    }
+
+    // Check for same-organization conflicts (so parents can watch multiple kids)
+    if (options.separateSameOrgTeams && matchupOrgIds.length > 0) {
+      const orgConflict = scheduledGames.find((g) => {
+        if (g.dateId !== slot.dateId || g.timeSlotId !== slot.timeSlotId) {
+          return false;
+        }
+        // Check if any team in scheduled games shares an org with this matchup
+        const scheduledHomeTeam = teams.find((t) => t.id === g.homeTeamId);
+        const scheduledAwayTeam = teams.find((t) => t.id === g.awayTeamId);
+        const scheduledOrgIds = [
+          scheduledHomeTeam?.organizationId,
+          scheduledAwayTeam?.organizationId,
+        ].filter(Boolean);
+
+        return matchupOrgIds.some((orgId) => scheduledOrgIds.includes(orgId));
+      });
+      if (orgConflict) continue;
     }
 
     return slot;

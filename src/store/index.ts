@@ -10,9 +10,12 @@ import type {
   WeeklySchedule,
   ScheduleSettings,
   Coach,
+  Organization,
 } from "@/types";
 
 interface AppState {
+  organizations: Organization[];
+  coaches: Coach[];
   teams: Team[];
   fields: Field[];
   scheduleDates: ScheduleDate[];
@@ -23,6 +26,20 @@ interface AppState {
 
   loadData: () => Promise<void>;
   saveData: () => Promise<void>;
+
+  // Organization management
+  addOrganization: (org: Omit<Organization, "id">) => void;
+  updateOrganization: (id: string, org: Partial<Organization>) => void;
+  deleteOrganization: (id: string) => void;
+  getTeamsByOrganization: (orgId: string) => Team[];
+  getCoachesByOrganization: (orgId: string) => Coach[];
+
+  // Global coach management (coaches can belong to orgs and be assigned to multiple teams)
+  addCoach: (coach: Omit<Coach, "id">) => void;
+  updateCoachById: (coachId: string, coach: Partial<Coach>) => void;
+  deleteCoach: (coachId: string) => void;
+  assignCoachToTeam: (teamId: string, coachId: string) => void;
+  removeCoachFromTeamById: (teamId: string, coachId: string) => void;
 
   addTeam: (team: Omit<Team, "id">) => void;
   updateTeam: (id: string, team: Partial<Team>) => void;
@@ -65,6 +82,8 @@ const defaultSettings: ScheduleSettings = {
 
 export const useAppStore = create<AppState>()(
   subscribeWithSelector((set, get) => ({
+    organizations: [],
+    coaches: [],
     teams: [],
     fields: [],
     scheduleDates: [],
@@ -79,6 +98,8 @@ export const useAppStore = create<AppState>()(
         if (response.ok) {
           const data = await response.json();
           set({
+            organizations: data.organizations || [],
+            coaches: data.coaches || [],
             teams: data.teams || [],
             fields: data.fields || [],
             scheduleDates: data.scheduleDates || [],
@@ -101,6 +122,8 @@ export const useAppStore = create<AppState>()(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            organizations: state.organizations,
+            coaches: state.coaches,
             teams: state.teams,
             fields: state.fields,
             scheduleDates: state.scheduleDates,
@@ -112,6 +135,104 @@ export const useAppStore = create<AppState>()(
       } catch (error) {
         console.error("Failed to save data:", error);
       }
+    },
+
+    // Organization management
+    addOrganization: (org) => {
+      set((state) => ({
+        organizations: [...state.organizations, { ...org, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
+
+    updateOrganization: (id, updates) => {
+      set((state) => ({
+        organizations: state.organizations.map((o) =>
+          o.id === id ? { ...o, ...updates } : o
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteOrganization: (id) => {
+      set((state) => ({
+        organizations: state.organizations.filter((o) => o.id !== id),
+        // Remove org reference from teams and coaches but don't delete them
+        teams: state.teams.map((t) =>
+          t.organizationId === id ? { ...t, organizationId: undefined } : t
+        ),
+        coaches: state.coaches.map((c) =>
+          c.organizationId === id ? { ...c, organizationId: undefined } : c
+        ),
+      }));
+      get().saveData();
+    },
+
+    getTeamsByOrganization: (orgId) => {
+      return get().teams.filter((t) => t.organizationId === orgId);
+    },
+
+    getCoachesByOrganization: (orgId) => {
+      return get().coaches.filter((c) => c.organizationId === orgId);
+    },
+
+    // Global coach management
+    addCoach: (coach) => {
+      set((state) => ({
+        coaches: [...state.coaches, { ...coach, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
+
+    updateCoachById: (coachId, updates) => {
+      set((state) => ({
+        coaches: state.coaches.map((c) =>
+          c.id === coachId ? { ...c, ...updates } : c
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteCoach: (coachId) => {
+      set((state) => ({
+        coaches: state.coaches.filter((c) => c.id !== coachId),
+        // Remove coach from all teams' coachIds arrays
+        teams: state.teams.map((t) => ({
+          ...t,
+          coachIds: t.coachIds?.filter((id) => id !== coachId) || [],
+        })),
+      }));
+      get().saveData();
+    },
+
+    assignCoachToTeam: (teamId, coachId) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId
+            ? {
+                ...t,
+                coachIds: [...(t.coachIds || []), coachId].filter(
+                  (id, index, arr) => arr.indexOf(id) === index
+                ),
+              }
+            : t
+        ),
+      }));
+      get().saveData();
+    },
+
+    removeCoachFromTeamById: (teamId, coachId) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId
+            ? {
+                ...t,
+                coachIds: t.coachIds?.filter((id) => id !== coachId) || [],
+              }
+            : t
+        ),
+      }));
+      get().saveData();
     },
 
     addTeam: (team) => {
@@ -330,6 +451,8 @@ export const useAppStore = create<AppState>()(
 
     clearAllData: () => {
       set({
+        organizations: [],
+        coaches: [],
         teams: [],
         fields: [],
         scheduleDates: [],

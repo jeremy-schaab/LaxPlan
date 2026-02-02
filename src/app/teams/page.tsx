@@ -51,7 +51,7 @@ import {
 import { useAppStore } from "@/store";
 import { useToast } from "@/components/ui/use-toast";
 import type { Team, AgeGroup, Coach } from "@/types";
-import { Plus, Pencil, Trash2, UserPlus, Mail, Phone } from "lucide-react";
+import { Plus, Pencil, Trash2, UserPlus, Mail, Phone, Building2 } from "lucide-react";
 
 const ageGroups: AgeGroup[] = ["U8", "U10", "U12", "U14", "HS", "Adult"];
 
@@ -67,8 +67,17 @@ const teamColors = [
 ];
 
 export default function TeamsPage() {
-  const { teams, addTeam, updateTeam, deleteTeam, addCoachToTeam, removeCoachFromTeam, updateCoach } =
-    useAppStore();
+  const {
+    teams,
+    organizations,
+    coaches: globalCoaches,
+    addTeam,
+    updateTeam,
+    deleteTeam,
+    addCoachToTeam,
+    removeCoachFromTeam,
+    updateCoach,
+  } = useAppStore();
   const { toast } = useToast();
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -82,6 +91,7 @@ export default function TeamsPage() {
     ageGroup: "U10" as AgeGroup,
     color: "#3b82f6",
     notes: "",
+    organizationId: "",
   });
 
   const [coachFormData, setCoachFormData] = useState({
@@ -96,7 +106,22 @@ export default function TeamsPage() {
       ageGroup: "U10",
       color: "#3b82f6",
       notes: "",
+      organizationId: "",
     });
+  };
+
+  const getOrganizationName = (orgId?: string) => {
+    if (!orgId) return null;
+    return organizations.find((o) => o.id === orgId)?.name;
+  };
+
+  const getTeamCoaches = (team: Team) => {
+    // Get coaches from coachIds (global coach references)
+    const linkedCoaches = (team.coachIds || [])
+      .map((id) => globalCoaches.find((c) => c.id === id))
+      .filter(Boolean) as Coach[];
+    // Also include legacy embedded coaches
+    return [...team.coaches, ...linkedCoaches];
   };
 
   const resetCoachForm = () => {
@@ -122,7 +147,9 @@ export default function TeamsPage() {
       ageGroup: formData.ageGroup,
       color: formData.color,
       notes: formData.notes,
+      organizationId: formData.organizationId || undefined,
       coaches: [],
+      coachIds: [],
     });
 
     toast({
@@ -142,6 +169,7 @@ export default function TeamsPage() {
       ageGroup: formData.ageGroup,
       color: formData.color,
       notes: formData.notes,
+      organizationId: formData.organizationId || undefined,
     });
 
     toast({
@@ -170,6 +198,7 @@ export default function TeamsPage() {
       ageGroup: team.ageGroup,
       color: team.color || "#3b82f6",
       notes: team.notes || "",
+      organizationId: team.organizationId || "",
     });
     setIsEditDialogOpen(true);
   };
@@ -283,6 +312,27 @@ export default function TeamsPage() {
                   </div>
                 </div>
                 <div className="grid gap-2">
+                  <Label htmlFor="organization">Organization (Optional)</Label>
+                  <Select
+                    value={formData.organizationId || "none"}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, organizationId: value === "none" ? "" : value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select organization" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Organization</SelectItem>
+                      {organizations.map((org) => (
+                        <SelectItem key={org.id} value={org.id}>
+                          {org.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="notes">Notes</Label>
                   <Textarea
                     id="notes"
@@ -329,6 +379,7 @@ export default function TeamsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Team</TableHead>
+                    <TableHead>Organization</TableHead>
                     <TableHead>Age Group</TableHead>
                     <TableHead>Coaches</TableHead>
                     <TableHead>Notes</TableHead>
@@ -336,7 +387,10 @@ export default function TeamsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {teams.map((team) => (
+                  {teams.map((team) => {
+                    const teamCoaches = getTeamCoaches(team);
+                    const orgName = getOrganizationName(team.organizationId);
+                    return (
                     <TableRow key={team.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -348,16 +402,26 @@ export default function TeamsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        {orgName ? (
+                          <div className="flex items-center gap-1">
+                            <Building2 className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm">{orgName}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Badge variant="secondary">{team.ageGroup}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          {team.coaches.length === 0 ? (
+                          {teamCoaches.length === 0 ? (
                             <span className="text-muted-foreground text-sm">
                               No coaches
                             </span>
                           ) : (
-                            team.coaches.map((coach) => (
+                            teamCoaches.map((coach) => (
                               <div key={coach.id} className="flex items-center gap-2 text-sm">
                                 <span>{coach.name}</span>
                                 {coach.email && (
@@ -400,7 +464,8 @@ export default function TeamsPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </CardContent>
@@ -466,6 +531,27 @@ export default function TeamsPage() {
                     />
                   ))}
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-organization">Organization</Label>
+                <Select
+                  value={formData.organizationId || "none"}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, organizationId: value === "none" ? "" : value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Organization</SelectItem>
+                    {organizations.map((org) => (
+                      <SelectItem key={org.id} value={org.id}>
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-notes">Notes</Label>

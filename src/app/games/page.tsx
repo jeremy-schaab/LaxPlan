@@ -93,6 +93,7 @@ export default function GamesPage() {
     avoidBackToBack: true,
     balanceHomeAway: true,
     prioritizeAgeGroups: true,
+    separateSameOrgTeams: true,
   });
 
   const resetForm = () => {
@@ -326,6 +327,23 @@ export default function GamesPage() {
                         setGenerateOptions({
                           ...generateOptions,
                           prioritizeAgeGroups: checked,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>Separate Same-Org Teams</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Teams from the same organization play at different times
+                      </p>
+                    </div>
+                    <Switch
+                      checked={generateOptions.separateSameOrgTeams}
+                      onCheckedChange={(checked) =>
+                        setGenerateOptions({
+                          ...generateOptions,
+                          separateSameOrgTeams: checked,
                         })
                       }
                     />
