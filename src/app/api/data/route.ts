@@ -31,6 +31,10 @@ export async function GET() {
         scheduleDates: [],
         games: [],
         weeklySchedules: [],
+        seasons: [],
+        locations: [],
+        fieldAllocations: [],
+        currentSeasonId: null,
         settings: {
           seasonName: "Spring 2024",
           seasonStartDate: new Date().toISOString().split("T")[0],
@@ -39,6 +43,8 @@ export async function GET() {
           avoidBackToBackGames: true,
           balanceHomeAway: true,
           minGamesBetweenTeams: 2,
+          separateSameOrgTeams: true,
+          aiSchedulingEnabled: false,
         },
       });
     }

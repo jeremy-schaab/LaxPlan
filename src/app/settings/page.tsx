@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
 import { useAppStore } from "@/store";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -35,12 +36,15 @@ import {
   Download,
   Upload,
   AlertTriangle,
+  Sparkles,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
-  const { settings, updateSettings, clearAllData, teams, fields, scheduleDates, games } =
+  const { settings, updateSettings, clearAllData, teams, fields, scheduleDates, games, seasons, locations, fieldAllocations } =
     useAppStore();
   const { toast } = useToast();
 
@@ -52,9 +56,32 @@ export default function SettingsPage() {
     avoidBackToBackGames: settings.avoidBackToBackGames,
     balanceHomeAway: settings.balanceHomeAway,
     minGamesBetweenTeams: settings.minGamesBetweenTeams,
+    separateSameOrgTeams: settings.separateSameOrgTeams ?? true,
+    aiSchedulingEnabled: settings.aiSchedulingEnabled ?? false,
   });
 
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [aiStatus, setAiStatus] = useState<{ enabled: boolean; endpoint?: string; deployment?: string } | null>(null);
+  const [checkingAI, setCheckingAI] = useState(false);
+
+  // Check AI status on mount
+  useEffect(() => {
+    checkAIStatus();
+  }, []);
+
+  const checkAIStatus = async () => {
+    setCheckingAI(true);
+    try {
+      const response = await fetch("/api/ai-schedule");
+      if (response.ok) {
+        const status = await response.json();
+        setAiStatus(status);
+      }
+    } catch (error) {
+      setAiStatus({ enabled: false });
+    }
+    setCheckingAI(false);
+  };
 
   const handleSave = () => {
     updateSettings({
@@ -65,6 +92,8 @@ export default function SettingsPage() {
       avoidBackToBackGames: formData.avoidBackToBackGames,
       balanceHomeAway: formData.balanceHomeAway,
       minGamesBetweenTeams: formData.minGamesBetweenTeams,
+      separateSameOrgTeams: formData.separateSameOrgTeams,
+      aiSchedulingEnabled: formData.aiSchedulingEnabled,
     });
 
     toast({
@@ -328,6 +357,97 @@ export default function SettingsPage() {
                 The minimum number of weeks before two teams play each other again
               </p>
             </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Separate Same-Organization Teams</Label>
+                <p className="text-sm text-muted-foreground">
+                  Schedule teams from the same organization at different times when possible
+                </p>
+              </div>
+              <Switch
+                checked={formData.separateSameOrgTeams}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, separateSameOrgTeams: checked })
+                }
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5" />
+              AI Scheduling
+            </CardTitle>
+            <CardDescription>
+              Use Azure OpenAI to optimize schedule generation
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label>Enable AI Scheduling</Label>
+                <p className="text-sm text-muted-foreground">
+                  Use AI to optimize game schedules based on constraints
+                </p>
+              </div>
+              <Switch
+                checked={formData.aiSchedulingEnabled}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, aiSchedulingEnabled: checked })
+                }
+                disabled={!aiStatus?.enabled}
+              />
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Azure OpenAI Status</Label>
+                <Button variant="ghost" size="sm" onClick={checkAIStatus} disabled={checkingAI}>
+                  {checkingAI ? "Checking..." : "Refresh"}
+                </Button>
+              </div>
+
+              {aiStatus ? (
+                <div className="bg-accent rounded-lg p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    {aiStatus.enabled ? (
+                      <>
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        <span className="font-medium text-green-700 dark:text-green-400">Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="h-5 w-5 text-orange-500" />
+                        <span className="font-medium text-orange-700 dark:text-orange-400">Not Configured</span>
+                      </>
+                    )}
+                  </div>
+
+                  {aiStatus.enabled ? (
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p>Endpoint: {aiStatus.endpoint}</p>
+                      <p>Deployment: {aiStatus.deployment}</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Set <code className="bg-background px-1 rounded">AZURE_OPENAI_ENDPOINT</code> and{" "}
+                      <code className="bg-background px-1 rounded">AZURE_OPENAI_API_KEY</code> environment variables to enable AI scheduling.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-accent rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground">Checking AI configuration...</p>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -399,8 +519,11 @@ export default function SettingsPage() {
               <AlertDialogDescription>
                 This will permanently delete:
                 <ul className="list-disc list-inside mt-2">
+                  <li>{seasons.length} seasons</li>
                   <li>{teams.length} teams</li>
+                  <li>{locations.length} locations</li>
                   <li>{fields.length} fields</li>
+                  <li>{fieldAllocations.length} field allocations</li>
                   <li>{scheduleDates.length} dates</li>
                   <li>{games.length} scheduled games</li>
                 </ul>
