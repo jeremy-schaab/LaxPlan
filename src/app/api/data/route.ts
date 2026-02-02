@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 
-const DATA_FILE = path.join(process.cwd(), "data", "laxplan-data.json");
+// Use DATA_DIR env var for Azure deployment, fallback to local data directory
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+const DATA_FILE = path.join(DATA_DIR, "laxplan-data.json");
 
 async function ensureDataDir() {
   const dataDir = path.dirname(DATA_FILE);
@@ -18,10 +20,12 @@ export async function GET() {
     await ensureDataDir();
     const data = await fs.readFile(DATA_FILE, "utf-8");
     return NextResponse.json(JSON.parse(data));
-  } catch (error: any) {
-    if (error.code === "ENOENT") {
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       // File doesn't exist yet, return empty state
       return NextResponse.json({
+        organizations: [],
+        coaches: [],
         teams: [],
         fields: [],
         scheduleDates: [],
