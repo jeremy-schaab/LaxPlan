@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DataProvider } from "@/components/providers/data-provider";
 
 export const metadata: Metadata = {
   title: "LaxPlan - Lacrosse Game Scheduler",
@@ -17,7 +18,9 @@ export default function RootLayout({
     <html lang="en">
       <body className="font-sans antialiased">
         <TooltipProvider>
-          {children}
+          <DataProvider>
+            {children}
+          </DataProvider>
           <Toaster />
         </TooltipProvider>
       </body>

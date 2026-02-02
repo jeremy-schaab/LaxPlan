@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { subscribeWithSelector } from "zustand/middleware";
 import { v4 as uuidv4 } from "uuid";
 import type {
   Team,
@@ -19,6 +19,10 @@ interface AppState {
   games: Game[];
   weeklySchedules: WeeklySchedule[];
   settings: ScheduleSettings;
+  isLoaded: boolean;
+
+  loadData: () => Promise<void>;
+  saveData: () => Promise<void>;
 
   addTeam: (team: Omit<Team, "id">) => void;
   updateTeam: (id: string, team: Partial<Team>) => void;
@@ -60,202 +64,280 @@ const defaultSettings: ScheduleSettings = {
 };
 
 export const useAppStore = create<AppState>()(
-  persist(
-    (set, get) => ({
-      teams: [],
-      fields: [],
-      scheduleDates: [],
-      games: [],
-      weeklySchedules: [],
-      settings: defaultSettings,
+  subscribeWithSelector((set, get) => ({
+    teams: [],
+    fields: [],
+    scheduleDates: [],
+    games: [],
+    weeklySchedules: [],
+    settings: defaultSettings,
+    isLoaded: false,
 
-      addTeam: (team) =>
-        set((state) => ({
-          teams: [...state.teams, { ...team, id: uuidv4() }],
-        })),
+    loadData: async () => {
+      try {
+        const response = await fetch("/api/data");
+        if (response.ok) {
+          const data = await response.json();
+          set({
+            teams: data.teams || [],
+            fields: data.fields || [],
+            scheduleDates: data.scheduleDates || [],
+            games: data.games || [],
+            weeklySchedules: data.weeklySchedules || [],
+            settings: data.settings || defaultSettings,
+            isLoaded: true,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load data:", error);
+        set({ isLoaded: true });
+      }
+    },
 
-      updateTeam: (id, updates) =>
-        set((state) => ({
-          teams: state.teams.map((t) =>
-            t.id === id ? { ...t, ...updates } : t
-          ),
-        })),
-
-      deleteTeam: (id) =>
-        set((state) => ({
-          teams: state.teams.filter((t) => t.id !== id),
-          games: state.games.filter(
-            (g) => g.homeTeamId !== id && g.awayTeamId !== id
-          ),
-        })),
-
-      addCoachToTeam: (teamId, coach) =>
-        set((state) => ({
-          teams: state.teams.map((t) =>
-            t.id === teamId
-              ? { ...t, coaches: [...t.coaches, { ...coach, id: uuidv4() }] }
-              : t
-          ),
-        })),
-
-      removeCoachFromTeam: (teamId, coachId) =>
-        set((state) => ({
-          teams: state.teams.map((t) =>
-            t.id === teamId
-              ? { ...t, coaches: t.coaches.filter((c) => c.id !== coachId) }
-              : t
-          ),
-        })),
-
-      updateCoach: (teamId, coachId, updates) =>
-        set((state) => ({
-          teams: state.teams.map((t) =>
-            t.id === teamId
-              ? {
-                  ...t,
-                  coaches: t.coaches.map((c) =>
-                    c.id === coachId ? { ...c, ...updates } : c
-                  ),
-                }
-              : t
-          ),
-        })),
-
-      addField: (field) =>
-        set((state) => ({
-          fields: [...state.fields, { ...field, id: uuidv4() }],
-        })),
-
-      updateField: (id, updates) =>
-        set((state) => ({
-          fields: state.fields.map((f) =>
-            f.id === id ? { ...f, ...updates } : f
-          ),
-        })),
-
-      deleteField: (id) =>
-        set((state) => ({
-          fields: state.fields.filter((f) => f.id !== id),
-          games: state.games.filter((g) => g.fieldId !== id),
-        })),
-
-      addScheduleDate: (date) =>
-        set((state) => ({
-          scheduleDates: [...state.scheduleDates, { ...date, id: uuidv4() }],
-        })),
-
-      updateScheduleDate: (id, updates) =>
-        set((state) => ({
-          scheduleDates: state.scheduleDates.map((d) =>
-            d.id === id ? { ...d, ...updates } : d
-          ),
-        })),
-
-      deleteScheduleDate: (id) =>
-        set((state) => ({
-          scheduleDates: state.scheduleDates.filter((d) => d.id !== id),
-          games: state.games.filter((g) => g.dateId !== id),
-        })),
-
-      addTimeSlotToDate: (dateId, timeSlot) =>
-        set((state) => ({
-          scheduleDates: state.scheduleDates.map((d) =>
-            d.id === dateId
-              ? {
-                  ...d,
-                  timeSlots: [...d.timeSlots, { ...timeSlot, id: uuidv4() }],
-                }
-              : d
-          ),
-        })),
-
-      removeTimeSlotFromDate: (dateId, timeSlotId) =>
-        set((state) => ({
-          scheduleDates: state.scheduleDates.map((d) =>
-            d.id === dateId
-              ? {
-                  ...d,
-                  timeSlots: d.timeSlots.filter((ts) => ts.id !== timeSlotId),
-                }
-              : d
-          ),
-        })),
-
-      addGame: (game) =>
-        set((state) => ({
-          games: [...state.games, { ...game, id: uuidv4() }],
-        })),
-
-      updateGame: (id, updates) =>
-        set((state) => ({
-          games: state.games.map((g) =>
-            g.id === id ? { ...g, ...updates } : g
-          ),
-        })),
-
-      deleteGame: (id) =>
-        set((state) => ({
-          games: state.games.filter((g) => g.id !== id),
-        })),
-
-      generateWeeklySchedule: (weekStartDate) => {
-        const state = get();
-        const startDate = new Date(weekStartDate);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 6);
-
-        const weekGames = state.games.filter((g) => {
-          const gameDate = state.scheduleDates.find((d) => d.id === g.dateId);
-          if (!gameDate) return false;
-          const gDate = new Date(gameDate.date);
-          return gDate >= startDate && gDate <= endDate;
+    saveData: async () => {
+      const state = get();
+      try {
+        await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teams: state.teams,
+            fields: state.fields,
+            scheduleDates: state.scheduleDates,
+            games: state.games,
+            weeklySchedules: state.weeklySchedules,
+            settings: state.settings,
+          }),
         });
+      } catch (error) {
+        console.error("Failed to save data:", error);
+      }
+    },
 
-        if (weekGames.length === 0) return null;
+    addTeam: (team) => {
+      set((state) => ({
+        teams: [...state.teams, { ...team, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
 
-        const schedule: WeeklySchedule = {
-          id: uuidv4(),
-          weekStartDate: startDate.toISOString().split("T")[0],
-          weekEndDate: endDate.toISOString().split("T")[0],
-          games: weekGames,
-          isPublished: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
+    updateTeam: (id, updates) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === id ? { ...t, ...updates } : t
+        ),
+      }));
+      get().saveData();
+    },
 
-        set((state) => ({
-          weeklySchedules: [...state.weeklySchedules, schedule],
-        }));
+    deleteTeam: (id) => {
+      set((state) => ({
+        teams: state.teams.filter((t) => t.id !== id),
+        games: state.games.filter(
+          (g) => g.homeTeamId !== id && g.awayTeamId !== id
+        ),
+      }));
+      get().saveData();
+    },
 
-        return schedule;
-      },
+    addCoachToTeam: (teamId, coach) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId
+            ? { ...t, coaches: [...t.coaches, { ...coach, id: uuidv4() }] }
+            : t
+        ),
+      }));
+      get().saveData();
+    },
 
-      publishSchedule: (scheduleId) =>
-        set((state) => ({
-          weeklySchedules: state.weeklySchedules.map((s) =>
-            s.id === scheduleId
-              ? { ...s, isPublished: true, updatedAt: new Date().toISOString() }
-              : s
-          ),
-        })),
+    removeCoachFromTeam: (teamId, coachId) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId
+            ? { ...t, coaches: t.coaches.filter((c) => c.id !== coachId) }
+            : t
+        ),
+      }));
+      get().saveData();
+    },
 
-      updateSettings: (updates) =>
-        set((state) => ({
-          settings: { ...state.settings, ...updates },
-        })),
+    updateCoach: (teamId, coachId, updates) => {
+      set((state) => ({
+        teams: state.teams.map((t) =>
+          t.id === teamId
+            ? {
+                ...t,
+                coaches: t.coaches.map((c) =>
+                  c.id === coachId ? { ...c, ...updates } : c
+                ),
+              }
+            : t
+        ),
+      }));
+      get().saveData();
+    },
 
-      clearAllData: () =>
-        set({
-          teams: [],
-          fields: [],
-          scheduleDates: [],
-          games: [],
-          weeklySchedules: [],
-          settings: defaultSettings,
-        }),
-    }),
-    {
-      name: "laxplan-storage",
-    }
-  )
+    addField: (field) => {
+      set((state) => ({
+        fields: [...state.fields, { ...field, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
+
+    updateField: (id, updates) => {
+      set((state) => ({
+        fields: state.fields.map((f) =>
+          f.id === id ? { ...f, ...updates } : f
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteField: (id) => {
+      set((state) => ({
+        fields: state.fields.filter((f) => f.id !== id),
+        games: state.games.filter((g) => g.fieldId !== id),
+      }));
+      get().saveData();
+    },
+
+    addScheduleDate: (date) => {
+      set((state) => ({
+        scheduleDates: [...state.scheduleDates, { ...date, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
+
+    updateScheduleDate: (id, updates) => {
+      set((state) => ({
+        scheduleDates: state.scheduleDates.map((d) =>
+          d.id === id ? { ...d, ...updates } : d
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteScheduleDate: (id) => {
+      set((state) => ({
+        scheduleDates: state.scheduleDates.filter((d) => d.id !== id),
+        games: state.games.filter((g) => g.dateId !== id),
+      }));
+      get().saveData();
+    },
+
+    addTimeSlotToDate: (dateId, timeSlot) => {
+      set((state) => ({
+        scheduleDates: state.scheduleDates.map((d) =>
+          d.id === dateId
+            ? {
+                ...d,
+                timeSlots: [...d.timeSlots, { ...timeSlot, id: uuidv4() }],
+              }
+            : d
+        ),
+      }));
+      get().saveData();
+    },
+
+    removeTimeSlotFromDate: (dateId, timeSlotId) => {
+      set((state) => ({
+        scheduleDates: state.scheduleDates.map((d) =>
+          d.id === dateId
+            ? {
+                ...d,
+                timeSlots: d.timeSlots.filter((ts) => ts.id !== timeSlotId),
+              }
+            : d
+        ),
+      }));
+      get().saveData();
+    },
+
+    addGame: (game) => {
+      set((state) => ({
+        games: [...state.games, { ...game, id: uuidv4() }],
+      }));
+      get().saveData();
+    },
+
+    updateGame: (id, updates) => {
+      set((state) => ({
+        games: state.games.map((g) =>
+          g.id === id ? { ...g, ...updates } : g
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteGame: (id) => {
+      set((state) => ({
+        games: state.games.filter((g) => g.id !== id),
+      }));
+      get().saveData();
+    },
+
+    generateWeeklySchedule: (weekStartDate) => {
+      const state = get();
+      const startDate = new Date(weekStartDate);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 6);
+
+      const weekGames = state.games.filter((g) => {
+        const gameDate = state.scheduleDates.find((d) => d.id === g.dateId);
+        if (!gameDate) return false;
+        const gDate = new Date(gameDate.date);
+        return gDate >= startDate && gDate <= endDate;
+      });
+
+      if (weekGames.length === 0) return null;
+
+      const schedule: WeeklySchedule = {
+        id: uuidv4(),
+        weekStartDate: startDate.toISOString().split("T")[0],
+        weekEndDate: endDate.toISOString().split("T")[0],
+        games: weekGames,
+        isPublished: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      set((state) => ({
+        weeklySchedules: [...state.weeklySchedules, schedule],
+      }));
+      get().saveData();
+
+      return schedule;
+    },
+
+    publishSchedule: (scheduleId) => {
+      set((state) => ({
+        weeklySchedules: state.weeklySchedules.map((s) =>
+          s.id === scheduleId
+            ? { ...s, isPublished: true, updatedAt: new Date().toISOString() }
+            : s
+        ),
+      }));
+      get().saveData();
+    },
+
+    updateSettings: (updates) => {
+      set((state) => ({
+        settings: { ...state.settings, ...updates },
+      }));
+      get().saveData();
+    },
+
+    clearAllData: () => {
+      set({
+        teams: [],
+        fields: [],
+        scheduleDates: [],
+        games: [],
+        weeklySchedules: [],
+        settings: defaultSettings,
+      });
+      get().saveData();
+    },
+  }))
 );
