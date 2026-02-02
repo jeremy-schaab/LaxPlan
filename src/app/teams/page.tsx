@@ -53,7 +53,7 @@ import { useToast } from "@/components/ui/use-toast";
 import type { Team, AgeGroup, Coach } from "@/types";
 import { Plus, Pencil, Trash2, UserPlus, Mail, Phone, Building2 } from "lucide-react";
 
-const ageGroups: AgeGroup[] = ["U8", "U10", "U12", "U14", "HS", "Adult"];
+const ageGroups: AgeGroup[] = ["U8", "U10", "U12", "U14", "MS", "HS", "Adult"];
 
 const teamColors = [
   { name: "Red", value: "#ef4444" },

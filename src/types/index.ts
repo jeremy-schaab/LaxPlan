@@ -1,4 +1,4 @@
-export type AgeGroup = "U8" | "U10" | "U12" | "U14" | "HS" | "Adult";
+export type AgeGroup = "U8" | "U10" | "U12" | "U14" | "MS" | "HS" | "Adult";
 
 export type FieldType = "full" | "half" | "third";
 

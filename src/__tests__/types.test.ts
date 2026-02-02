@@ -14,8 +14,8 @@ import type {
 describe("Type Definitions", () => {
   describe("AgeGroup type", () => {
     it("should accept valid age groups", () => {
-      const validAgeGroups: AgeGroup[] = ["U8", "U10", "U12", "U14", "HS", "Adult"];
-      expect(validAgeGroups).toHaveLength(6);
+      const validAgeGroups: AgeGroup[] = ["U8", "U10", "U12", "U14", "MS", "HS", "Adult"];
+      expect(validAgeGroups).toHaveLength(7);
     });
   });
 
