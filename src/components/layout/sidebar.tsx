@@ -14,14 +14,20 @@ import {
   ClipboardList,
   Building2,
   UserCog,
+  CalendarRange,
+  Landmark,
+  CalendarCheck,
 } from "lucide-react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
+  { name: "Seasons", href: "/seasons", icon: CalendarRange },
   { name: "Organizations", href: "/organizations", icon: Building2 },
   { name: "Coaches", href: "/coaches", icon: UserCog },
   { name: "Teams", href: "/teams", icon: Users },
+  { name: "Locations", href: "/locations", icon: Landmark },
   { name: "Fields", href: "/fields", icon: MapPin },
+  { name: "Field Allocations", href: "/allocations", icon: CalendarCheck },
   { name: "Dates & Times", href: "/dates", icon: Calendar },
   { name: "Games", href: "/games", icon: ClipboardList },
   { name: "Weekly Schedule", href: "/schedule", icon: CalendarDays },

@@ -11,9 +11,14 @@ import type {
   ScheduleSettings,
   Coach,
   Organization,
+  Season,
+  Location,
+  FieldAllocation,
+  SeasonStatus,
 } from "@/types";
 
 interface AppState {
+  // Existing entities
   organizations: Organization[];
   coaches: Coach[];
   teams: Team[];
@@ -23,6 +28,12 @@ interface AppState {
   weeklySchedules: WeeklySchedule[];
   settings: ScheduleSettings;
   isLoaded: boolean;
+
+  // New entities for multi-field location management
+  seasons: Season[];
+  locations: Location[];
+  fieldAllocations: FieldAllocation[];
+  currentSeasonId: string | null;
 
   loadData: () => Promise<void>;
   saveData: () => Promise<void>;
@@ -68,6 +79,39 @@ interface AppState {
   updateSettings: (settings: Partial<ScheduleSettings>) => void;
 
   clearAllData: () => void;
+
+  // Season management
+  addSeason: (season: Omit<Season, "id" | "createdAt" | "updatedAt">) => string;
+  updateSeason: (id: string, season: Partial<Season>) => void;
+  deleteSeason: (id: string) => void;
+  setCurrentSeason: (seasonId: string | null) => void;
+  getSeasonById: (id: string) => Season | undefined;
+  getDefaultSeason: () => Season | undefined;
+
+  // Location management
+  addLocation: (location: Omit<Location, "id">) => string;
+  updateLocation: (id: string, location: Partial<Location>) => void;
+  deleteLocation: (id: string) => void;
+  getFieldsByLocation: (locationId: string) => Field[];
+  getLocationById: (id: string) => Location | undefined;
+
+  // Field Allocation management
+  addFieldAllocation: (allocation: Omit<FieldAllocation, "id" | "createdAt" | "updatedAt">) => string;
+  updateFieldAllocation: (id: string, allocation: Partial<FieldAllocation>) => void;
+  deleteFieldAllocation: (id: string) => void;
+  getFieldAllocationsByDate: (date: string, seasonId?: string) => FieldAllocation[];
+  getFieldAllocationsByLocation: (locationId: string, seasonId?: string) => FieldAllocation[];
+  getFieldAllocationById: (id: string) => FieldAllocation | undefined;
+
+  // Season-aware filtering helpers
+  getGamesBySeason: (seasonId: string) => Game[];
+  getScheduleDatesBySeason: (seasonId: string) => ScheduleDate[];
+  getFieldAllocationsBySeason: (seasonId: string) => FieldAllocation[];
+  getTeamsByOrganizations: (organizationIds: string[]) => Team[];
+
+  // Data migration helpers
+  migrateToSeasons: () => void;
+  migrateFieldsToLocations: () => void;
 }
 
 const defaultSettings: ScheduleSettings = {
@@ -78,10 +122,13 @@ const defaultSettings: ScheduleSettings = {
   avoidBackToBackGames: true,
   balanceHomeAway: true,
   minGamesBetweenTeams: 2,
+  separateSameOrgTeams: true,
+  aiSchedulingEnabled: false,
 };
 
 export const useAppStore = create<AppState>()(
   subscribeWithSelector((set, get) => ({
+    // Existing entities
     organizations: [],
     coaches: [],
     teams: [],
@@ -92,11 +139,26 @@ export const useAppStore = create<AppState>()(
     settings: defaultSettings,
     isLoaded: false,
 
+    // New entities
+    seasons: [],
+    locations: [],
+    fieldAllocations: [],
+    currentSeasonId: null,
+
     loadData: async () => {
       try {
         const response = await fetch("/api/data");
         if (response.ok) {
           const data = await response.json();
+          const loadedSettings = data.settings || defaultSettings;
+          // Ensure new settings fields have defaults
+          const mergedSettings: ScheduleSettings = {
+            ...defaultSettings,
+            ...loadedSettings,
+            separateSameOrgTeams: loadedSettings.separateSameOrgTeams ?? true,
+            aiSchedulingEnabled: loadedSettings.aiSchedulingEnabled ?? false,
+          };
+
           set({
             organizations: data.organizations || [],
             coaches: data.coaches || [],
@@ -105,9 +167,18 @@ export const useAppStore = create<AppState>()(
             scheduleDates: data.scheduleDates || [],
             games: data.games || [],
             weeklySchedules: data.weeklySchedules || [],
-            settings: data.settings || defaultSettings,
+            settings: mergedSettings,
+            seasons: data.seasons || [],
+            locations: data.locations || [],
+            fieldAllocations: data.fieldAllocations || [],
+            currentSeasonId: data.currentSeasonId || mergedSettings.defaultSeasonId || null,
             isLoaded: true,
           });
+
+          // Run migrations after loading
+          const store = get();
+          store.migrateToSeasons();
+          store.migrateFieldsToLocations();
         }
       } catch (error) {
         console.error("Failed to load data:", error);
@@ -130,6 +201,10 @@ export const useAppStore = create<AppState>()(
             games: state.games,
             weeklySchedules: state.weeklySchedules,
             settings: state.settings,
+            seasons: state.seasons,
+            locations: state.locations,
+            fieldAllocations: state.fieldAllocations,
+            currentSeasonId: state.currentSeasonId,
           }),
         });
       } catch (error) {
@@ -459,7 +534,343 @@ export const useAppStore = create<AppState>()(
         games: [],
         weeklySchedules: [],
         settings: defaultSettings,
+        seasons: [],
+        locations: [],
+        fieldAllocations: [],
+        currentSeasonId: null,
       });
+      get().saveData();
+    },
+
+    // =========================================================================
+    // Season Management
+    // =========================================================================
+    addSeason: (season) => {
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      const newSeason: Season = {
+        ...season,
+        id,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      set((state) => {
+        // If this is the first season or it's marked as default, make it the only default
+        const updatedSeasons = season.isDefault
+          ? state.seasons.map((s) => ({ ...s, isDefault: false }))
+          : state.seasons;
+
+        return {
+          seasons: [...updatedSeasons, newSeason],
+          currentSeasonId: season.isDefault ? id : state.currentSeasonId,
+        };
+      });
+      get().saveData();
+      return id;
+    },
+
+    updateSeason: (id, updates) => {
+      set((state) => {
+        let updatedSeasons = state.seasons.map((s) =>
+          s.id === id ? { ...s, ...updates, updatedAt: new Date().toISOString() } : s
+        );
+
+        // If setting this season as default, remove default from others
+        if (updates.isDefault) {
+          updatedSeasons = updatedSeasons.map((s) =>
+            s.id !== id ? { ...s, isDefault: false } : s
+          );
+        }
+
+        return {
+          seasons: updatedSeasons,
+          // Update settings with new default season if needed
+          settings: updates.isDefault
+            ? { ...state.settings, defaultSeasonId: id }
+            : state.settings,
+        };
+      });
+      get().saveData();
+    },
+
+    deleteSeason: (id) => {
+      set((state) => {
+        const deletedSeason = state.seasons.find((s) => s.id === id);
+        const remainingSeasons = state.seasons.filter((s) => s.id !== id);
+
+        // If deleting the default season, make the first remaining one default
+        let newSeasons = remainingSeasons;
+        if (deletedSeason?.isDefault && remainingSeasons.length > 0) {
+          newSeasons = remainingSeasons.map((s, i) =>
+            i === 0 ? { ...s, isDefault: true } : s
+          );
+        }
+
+        return {
+          seasons: newSeasons,
+          // Clear currentSeasonId if we're deleting the current season
+          currentSeasonId:
+            state.currentSeasonId === id
+              ? newSeasons.length > 0
+                ? newSeasons[0].id
+                : null
+              : state.currentSeasonId,
+          // Update settings if we deleted the default
+          settings:
+            state.settings.defaultSeasonId === id
+              ? {
+                  ...state.settings,
+                  defaultSeasonId: newSeasons.length > 0 ? newSeasons[0].id : undefined,
+                }
+              : state.settings,
+          // Remove field allocations for this season
+          fieldAllocations: state.fieldAllocations.filter((fa) => fa.seasonId !== id),
+        };
+      });
+      get().saveData();
+    },
+
+    setCurrentSeason: (seasonId) => {
+      set({ currentSeasonId: seasonId });
+      get().saveData();
+    },
+
+    getSeasonById: (id) => {
+      return get().seasons.find((s) => s.id === id);
+    },
+
+    getDefaultSeason: () => {
+      const state = get();
+      return state.seasons.find((s) => s.isDefault) || state.seasons[0];
+    },
+
+    // =========================================================================
+    // Location Management
+    // =========================================================================
+    addLocation: (location) => {
+      const id = uuidv4();
+      set((state) => ({
+        locations: [...state.locations, { ...location, id }],
+      }));
+      get().saveData();
+      return id;
+    },
+
+    updateLocation: (id, updates) => {
+      set((state) => ({
+        locations: state.locations.map((l) =>
+          l.id === id ? { ...l, ...updates } : l
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteLocation: (id) => {
+      set((state) => ({
+        locations: state.locations.filter((l) => l.id !== id),
+        // Remove locationId from fields at this location
+        fields: state.fields.map((f) =>
+          f.locationId === id ? { ...f, locationId: undefined } : f
+        ),
+        // Remove field allocations for this location
+        fieldAllocations: state.fieldAllocations.filter((fa) => fa.locationId !== id),
+      }));
+      get().saveData();
+    },
+
+    getFieldsByLocation: (locationId) => {
+      return get().fields.filter((f) => f.locationId === locationId);
+    },
+
+    getLocationById: (id) => {
+      return get().locations.find((l) => l.id === id);
+    },
+
+    // =========================================================================
+    // Field Allocation Management
+    // =========================================================================
+    addFieldAllocation: (allocation) => {
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      const newAllocation: FieldAllocation = {
+        ...allocation,
+        id,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      set((state) => ({
+        fieldAllocations: [...state.fieldAllocations, newAllocation],
+      }));
+      get().saveData();
+      return id;
+    },
+
+    updateFieldAllocation: (id, updates) => {
+      set((state) => ({
+        fieldAllocations: state.fieldAllocations.map((fa) =>
+          fa.id === id
+            ? { ...fa, ...updates, updatedAt: new Date().toISOString() }
+            : fa
+        ),
+      }));
+      get().saveData();
+    },
+
+    deleteFieldAllocation: (id) => {
+      set((state) => ({
+        fieldAllocations: state.fieldAllocations.filter((fa) => fa.id !== id),
+        // Remove fieldAllocationId from games linked to this allocation
+        games: state.games.map((g) =>
+          g.fieldAllocationId === id ? { ...g, fieldAllocationId: undefined } : g
+        ),
+      }));
+      get().saveData();
+    },
+
+    getFieldAllocationsByDate: (date, seasonId) => {
+      const state = get();
+      return state.fieldAllocations.filter(
+        (fa) => fa.date === date && (!seasonId || fa.seasonId === seasonId)
+      );
+    },
+
+    getFieldAllocationsByLocation: (locationId, seasonId) => {
+      const state = get();
+      return state.fieldAllocations.filter(
+        (fa) => fa.locationId === locationId && (!seasonId || fa.seasonId === seasonId)
+      );
+    },
+
+    getFieldAllocationById: (id) => {
+      return get().fieldAllocations.find((fa) => fa.id === id);
+    },
+
+    // =========================================================================
+    // Season-aware Filtering Helpers
+    // =========================================================================
+    getGamesBySeason: (seasonId) => {
+      return get().games.filter((g) => g.seasonId === seasonId);
+    },
+
+    getScheduleDatesBySeason: (seasonId) => {
+      return get().scheduleDates.filter((d) => d.seasonId === seasonId);
+    },
+
+    getFieldAllocationsBySeason: (seasonId) => {
+      return get().fieldAllocations.filter((fa) => fa.seasonId === seasonId);
+    },
+
+    getTeamsByOrganizations: (organizationIds) => {
+      return get().teams.filter(
+        (t) => t.organizationId && organizationIds.includes(t.organizationId)
+      );
+    },
+
+    // =========================================================================
+    // Data Migration Helpers
+    // =========================================================================
+    migrateToSeasons: () => {
+      const state = get();
+
+      // Skip if seasons already exist
+      if (state.seasons.length > 0) return;
+
+      // Skip if there's no legacy season data
+      if (!state.settings.seasonName) return;
+
+      // Create a legacy season from settings
+      const now = new Date().toISOString();
+      const legacySeasonId = uuidv4();
+      const legacySeason: Season = {
+        id: legacySeasonId,
+        name: state.settings.seasonName || "Legacy Season",
+        startDate: state.settings.seasonStartDate,
+        endDate: state.settings.seasonEndDate,
+        status: "active" as SeasonStatus,
+        isDefault: true,
+        notes: "Migrated from legacy settings",
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Update games and schedule dates with the legacy season ID
+      const updatedGames = state.games.map((g) => ({
+        ...g,
+        seasonId: g.seasonId || legacySeasonId,
+      }));
+
+      const updatedScheduleDates = state.scheduleDates.map((d) => ({
+        ...d,
+        seasonId: d.seasonId || legacySeasonId,
+      }));
+
+      const updatedWeeklySchedules = state.weeklySchedules.map((ws) => ({
+        ...ws,
+        seasonId: ws.seasonId || legacySeasonId,
+      }));
+
+      set({
+        seasons: [legacySeason],
+        games: updatedGames,
+        scheduleDates: updatedScheduleDates,
+        weeklySchedules: updatedWeeklySchedules,
+        currentSeasonId: legacySeasonId,
+        settings: {
+          ...state.settings,
+          defaultSeasonId: legacySeasonId,
+        },
+      });
+
+      get().saveData();
+    },
+
+    migrateFieldsToLocations: () => {
+      const state = get();
+
+      // Skip if locations already exist
+      if (state.locations.length > 0) return;
+
+      // Skip if there are no fields with location strings
+      const fieldsWithLocation = state.fields.filter((f) => f.location && !f.locationId);
+      if (fieldsWithLocation.length === 0) return;
+
+      // Group fields by their location string
+      const locationGroups = new Map<string, Field[]>();
+      state.fields.forEach((field) => {
+        if (field.location && !field.locationId) {
+          const locName = field.location;
+          const existing = locationGroups.get(locName) || [];
+          existing.push(field);
+          locationGroups.set(locName, existing);
+        }
+      });
+
+      // Create Location entities and update fields
+      const newLocations: Location[] = [];
+      const fieldUpdates: { id: string; locationId: string }[] = [];
+
+      locationGroups.forEach((fields, locName) => {
+        const locationId = uuidv4();
+        newLocations.push({
+          id: locationId,
+          name: locName,
+        });
+        fields.forEach((f) => {
+          fieldUpdates.push({ id: f.id, locationId });
+        });
+      });
+
+      // Apply updates
+      set((state) => ({
+        locations: newLocations,
+        fields: state.fields.map((f) => {
+          const update = fieldUpdates.find((u) => u.id === f.id);
+          return update ? { ...f, locationId: update.locationId } : f;
+        }),
+      }));
+
       get().saveData();
     },
   }))
