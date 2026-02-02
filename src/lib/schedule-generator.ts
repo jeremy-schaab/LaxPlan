@@ -64,11 +64,14 @@ export function generateSchedule(
   const splitSlots = fieldSlots.filter((s) => s.fieldPortion !== "full");
   const fullSlots = fieldSlots.filter((s) => s.fieldPortion === "full");
 
+  // Combine existing games with newly generated games for conflict checking
+  const allGames = [...existingGames];
+
   for (const matchup of youngerTeamMatchups) {
     const availableSlot = findAvailableSlot(
       splitSlots.length > 0 ? splitSlots : fullSlots,
       matchup,
-      games,
+      [...allGames, ...games],
       teamStats,
       options
     );
@@ -95,7 +98,7 @@ export function generateSchedule(
     const availableSlot = findAvailableSlot(
       fullSlots,
       matchup,
-      games,
+      [...allGames, ...games],
       teamStats,
       options
     );
